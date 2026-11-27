@@ -1,0 +1,6 @@
+{
+  "name": "Jewel Bloom: Hamster Bead Pop",
+  "description": "Tactical pixel-bead shooter puzzle: load color emitters into the 5-slot turret dock and bloom the grayscale cherry hamster into vibrant color.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

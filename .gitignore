@@ -1,0 +1,17 @@
+node_modules/
+dist/
+studio-dist/
+.netlify/
+.DS_Store
+*.log
+.env
+.env.*
+
+# Exclude large unused raw reference dumps from git history
+public/assets/aistudio/*.mp4
+public/assets/aistudio/*.html
+public/assets/aistudio/image_*.png
+public/assets/aistudio/_______*.png
+public/assets/aistudio/Jewel_Bloom_4fd70dd9.png
+public/assets/einstein_avatar.jpg
+public/assets/voice/
