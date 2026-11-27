@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -1261,9 +1262,145 @@ const studioHtml = `<!DOCTYPE html>
 
 const studioOutPath = path.resolve(distDir, 'Jewel_Bloom_Playable_Studio.html');
 fs.writeFileSync(studioOutPath, studioHtml, 'utf8');
+
+// Build AES-256-GCM password-protected online version at docs/index.html
+const studioPassword = (process.env.STUDIO_PASSWORD || 'jb2026').trim();
+const salt = crypto.randomBytes(16);
+const iv = crypto.randomBytes(12);
+const key = crypto.pbkdf2Sync(studioPassword, salt, 100000, 32, 'sha256');
+const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
+const encBuf = Buffer.concat([cipher.update(studioHtml, 'utf8'), cipher.final(), cipher.getAuthTag()]);
+
+const lockedDocsHtml = `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="robots" content="noindex, nofollow" />
+<title>Jewel Bloom 试玩工作台 · 访问验证</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; height: 100%;
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Segoe UI", Roboto, sans-serif;
+    background: radial-gradient(circle at 30% 20%, #fffaf0 0%, #efe3cb 100%);
+    color: #2b2116;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .card {
+    width: min(380px, 90vw);
+    background: #fffdf8;
+    border: 1.5px solid #e5d4b3;
+    border-radius: 22px;
+    padding: 28px 24px 24px;
+    box-shadow: 0 20px 50px rgba(72, 48, 16, 0.14);
+    text-align: center;
+  }
+  .badge {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 52px; height: 52px; border-radius: 16px;
+    background: linear-gradient(135deg, #fff3cf 0%, #f9d98c 100%);
+    border: 1.5px solid #e2b95c;
+    font-size: 24px; margin-bottom: 12px;
+  }
+  h1 { margin: 0 0 6px; font-size: 18px; font-weight: 800; color: #3a260f; }
+  p { margin: 0 0 18px; font-size: 12px; color: #7a6548; }
+  input {
+    width: 100%; padding: 12px 14px;
+    border: 1.5px solid #ddc89f; border-radius: 12px;
+    font-size: 14px; background: #fff; color: #2b2116;
+    outline: none; text-align: center; letter-spacing: 1px;
+  }
+  input:focus { border-color: #e5930b; box-shadow: 0 0 0 3px rgba(229, 147, 11, 0.16); }
+  button {
+    width: 100%; margin-top: 12px; border: none; border-radius: 12px;
+    padding: 12px 16px; font-size: 14px; font-weight: 800; color: #fff;
+    cursor: pointer;
+    background: linear-gradient(180deg, #5cd62a 0%, #27a811 100%);
+    box-shadow: 0 3px 0 #166b06;
+  }
+  button:disabled { opacity: 0.65; cursor: wait; }
+  .err { margin-top: 10px; font-size: 12px; font-weight: 700; color: #be123c; min-height: 18px; }
+</style>
+</head>
+<body>
+  <form id="lockForm" class="card">
+    <div class="badge">🔒</div>
+    <h1>Jewel Bloom 试玩工作台</h1>
+    <p>仅限内部使用，请输入访问密码解锁</p>
+    <input id="pwdInput" type="password" placeholder="请输入访问密码" autocomplete="current-password" autofocus required />
+    <button id="submitBtn" type="submit">验证并进入</button>
+    <div id="errText" class="err"></div>
+  </form>
+<script>
+(function(){
+  const SALT_B64 = ${JSON.stringify(salt.toString('base64'))};
+  const IV_B64 = ${JSON.stringify(iv.toString('base64'))};
+  const DATA_B64 = ${JSON.stringify(encBuf.toString('base64'))};
+  const SESSION_KEY = 'jb_studio_pwd_v1';
+
+  function b64ToBytes(b64) {
+    const bin = atob(b64);
+    const out = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out;
+  }
+
+  async function unlock(password, silent) {
+    const btn = document.getElementById('submitBtn');
+    const err = document.getElementById('errText');
+    if (!silent) { btn.disabled = true; btn.textContent = '验证中...'; err.textContent = ''; }
+    try {
+      const enc = new TextEncoder();
+      const baseKey = await crypto.subtle.importKey('raw', enc.encode(password), 'PBKDF2', false, ['deriveKey']);
+      const aesKey = await crypto.subtle.deriveKey(
+        { name: 'PBKDF2', salt: b64ToBytes(SALT_B64), iterations: 100000, hash: 'SHA-256' },
+        baseKey,
+        { name: 'AES-GCM', length: 256 },
+        false,
+        ['decrypt']
+      );
+      const plainBuf = await crypto.subtle.decrypt(
+        { name: 'AES-GCM', iv: b64ToBytes(IV_B64) },
+        aesKey,
+        b64ToBytes(DATA_B64)
+      );
+      const html = new TextDecoder('utf-8').decode(plainBuf);
+      try { sessionStorage.setItem(SESSION_KEY, password); } catch {}
+      document.open();
+      document.write(html);
+      document.close();
+    } catch {
+      try { sessionStorage.removeItem(SESSION_KEY); } catch {}
+      if (!silent) {
+        btn.disabled = false;
+        btn.textContent = '验证并进入';
+        err.textContent = '密码错误，请重新输入';
+        document.getElementById('pwdInput').select();
+      }
+    }
+  }
+
+  document.getElementById('lockForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    const pwd = document.getElementById('pwdInput').value.trim();
+    if (pwd) unlock(pwd, false);
+  });
+
+  // Auto-unlock within the same browser tab session
+  try {
+    const cached = sessionStorage.getItem(SESSION_KEY);
+    if (cached) unlock(cached, true);
+  } catch {}
+})();
+</script>
+</body>
+</html>`;
+
 const docsDir = path.resolve(rootDir, 'docs');
 fs.mkdirSync(docsDir, { recursive: true });
-fs.writeFileSync(path.resolve(docsDir, 'index.html'), studioHtml, 'utf8');
+fs.writeFileSync(path.resolve(docsDir, 'index.html'), lockedDocsHtml, 'utf8');
 const studioSizeMb = (fs.statSync(studioOutPath).size / (1024 * 1024)).toFixed(2);
-console.log(`\nBuilt standalone online replacement studio: ${studioOutPath} (and docs/index.html)`);
-console.log(`Studio size: ${studioSizeMb} MB (pure client-side HTML, double-click or host anywhere!)`);
+const docsSizeMb = (fs.statSync(path.resolve(docsDir, 'index.html')).size / (1024 * 1024)).toFixed(2);
+console.log(`\nBuilt standalone studio: ${studioOutPath} (${studioSizeMb} MB, unlocked local)`);
+console.log(`Built password-protected online studio: docs/index.html (${docsSizeMb} MB, AES-256-GCM encrypted)`);
