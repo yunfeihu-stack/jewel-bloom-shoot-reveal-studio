@@ -1264,7 +1264,11 @@ const studioOutPath = path.resolve(distDir, 'Jewel_Bloom_Playable_Studio.html');
 fs.writeFileSync(studioOutPath, studioHtml, 'utf8');
 
 // Build AES-256-GCM password-protected online version at docs/index.html
-const studioPassword = (process.env.STUDIO_PASSWORD || 'jb2026').trim();
+const studioPassword = (process.env.STUDIO_PASSWORD || '').trim();
+if (!studioPassword) {
+  console.log('\nSkipped docs/index.html encryption (set STUDIO_PASSWORD=... to build locked online studio).');
+  process.exit(0);
+}
 const salt = crypto.randomBytes(16);
 const iv = crypto.randomBytes(12);
 const key = crypto.pbkdf2Sync(studioPassword, salt, 100000, 32, 'sha256');
